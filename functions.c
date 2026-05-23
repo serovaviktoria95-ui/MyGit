@@ -48,6 +48,10 @@ void func_add(repository* R, char* filename){
         printf("File %s was not found\n", filename); 
         return;
     }
+    if (!S_ISREG(st.st_mode)){
+        printf("Error: %s is not a regular file (directory or special file)\n", filename);
+        return;
+    }
     char* contain = read_file(filename);
     char file_hash[41];
     get_file_hash(contain, file_hash);
