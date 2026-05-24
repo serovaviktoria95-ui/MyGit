@@ -36,6 +36,20 @@ char* read_file(char* filename) {
     return string;
 }
 
+void get_object_path(char* obj_path, size_t size, const char* commit_hash, const char* filename) {
+    char safe_filename[512];
+    strncpy(safe_filename, filename, sizeof(safe_filename) - 1);
+    safe_filename[sizeof(safe_filename) - 1] = '\0';
+
+    for (int i = 0; safe_filename[i]; i++) {
+        if (safe_filename[i] == '/') {
+            safe_filename[i] = '%';
+        }
+    }
+
+    snprintf(obj_path, size, ".mygit/objects/%s_%s", commit_hash, safe_filename);
+}
+
 commit* create_commit(repository* R, char* message, char** files, int cnt){
     commit* new_commit = malloc(sizeof(commit));
     new_commit->parent = R->head; // родителем будет текущий коммит
@@ -55,17 +69,22 @@ commit* create_commit(repository* R, char* message, char** files, int cnt){
     R->head = new_commit;
     printf("Commit created: %s\n", new_commit->hash);
     // хранение содержимого файлов
-    for (int i = 0; i < cnt; i++) {
-        char* content = read_file(files[i]);
-        char obj_path[512];
-        snprintf(obj_path, sizeof(obj_path), ".mygit/objects/%s_%s", \
-        new_commit->hash, files[i]);
-        
-        FILE* output = fopen(obj_path, "w");
+    // Внутри функции create_commit в commit.c
+for (int i = 0; i < cnt; i++) {
+    char* content = read_file(files[i]);
+    char filename[512];
+    strncpy(filename, files[i], sizeof(filename));
+
+    char obj_path[1024];
+    get_object_path(obj_path, sizeof(obj_path), new_commit->hash, files[i]);
+    
+    FILE* output = fopen(obj_path, "w");
+    if (output) {
         fprintf(output, "%s", content);
         fclose(output);
-        free(content);
     }
+    free(content);
+}
     save_commit(new_commit);
     return new_commit;
 }

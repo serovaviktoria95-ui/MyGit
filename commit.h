@@ -26,3 +26,5 @@ void generate_hash(commit* c);
 void free_commit(commit* c);
 // ленивая загрузка родителя, используем только для log
 commit* load_parent(commit* c);
+// формирует безопасный путь к объекту, заменяя '/' на '%'
+void get_object_path(char* obj_path, size_t size, const char* commit_hash, const char* filename);

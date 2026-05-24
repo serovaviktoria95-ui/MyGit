@@ -3,6 +3,7 @@
 #include "staging_area.h"
 #include <sys/stat.h>
 #include <openssl/sha.h>
+#include <dirent.h>  
 
 // список команд для пользователя
 void help(){
@@ -41,7 +42,6 @@ void get_file_hash(char* content, char* file_hash){
     file_hash[40] = '\0';
 }
 
-// добавляет указанный файл в список файлов, которые должны попасть в следующий коммит
 void func_add(repository* R, char* filename){
     struct stat st;
     if(stat(filename, &st) == -1){
@@ -52,20 +52,50 @@ void func_add(repository* R, char* filename){
         printf("Error: %s is not a regular file (directory or special file)\n", filename);
         return;
     }
+    
     char* contain = read_file(filename);
+    if (!contain) {
+        printf("Error: Could not read file %s\n", filename);
+        return;
+    }
+    
     char file_hash[41];
     get_file_hash(contain, file_hash);
-    // добавляем в staging area
-    add_SA(R->staging, filename, contain);
+    add_SA(R->staging, filename, contain);  
     printf("Successfully added: %s (hash: %s)\n", filename, file_hash);
     free(contain);
 }
 
 // добавляет указанный файл в список файлов, которые должны попасть в следующий
 // коммит с пометкой, что указанный файл удален.
-void func_remove(repository* R, char* filename){
-    add_SA(R->staging, filename, NULL);
-    printf("Successfully removed: %s\n", filename);
+void func_remove(repository* R, char* filename) {
+    int found_in_staged = search_SA(R->staging, filename);
+    int found_in_head = 0;
+
+    if (R->head) {
+        for (int i = 0; i < R->head->files_cnt; i++) {
+            if (strcmp(R->head->files[i], filename) == 0) {
+                found_in_head = 1;
+                break;
+            }
+        }
+    }
+
+    if (found_in_staged != -1) {
+        if (R->staging->contain[found_in_staged] != NULL) {
+             add_SA(R->staging, filename, NULL); 
+             printf("Successfully removed: %s\n", filename);
+        } else {
+             printf("File '%s' is already marked for removal\n", filename);
+        }
+    } 
+    else if (found_in_head) {
+        add_SA(R->staging, filename, NULL);
+        printf("Successfully removed: %s\n", filename);
+    } 
+    else {
+        printf("File '%s' was not found\n", filename);
+    }
 }
 
 // фиксирует состояние файлов, добавленных командой add и remove, 
@@ -101,7 +131,6 @@ void func_commit(repository* R, char* message){
     printf("Successfully committed: %s\n", new_commit->hash);
     free(files_to_commit);
 }
-
 // вывод цепочки до начального коммита
 void func_log(repository* R, int argc, char** argv) {
     if (!R || !R->head) {
@@ -165,10 +194,9 @@ void func_diff(repository* R, char* commit_hash){
             if (strcmp(cur->files[i], target->files[j]) == 0) {
                 // файл есть в обоих коммитах - проверяем содержимое
                 char cur_path[512], target_path[512];
-                snprintf(cur_path, sizeof(cur_path), ".mygit/objects/%s_%s", \
-                cur->hash, cur->files[i]);
-                snprintf(target_path, sizeof(target_path), ".mygit/objects/%s_%s",\
-                target->hash, target->files[j]);
+                
+                get_object_path(cur_path, sizeof(cur_path), cur->hash, cur->files[i]);
+                get_object_path(target_path, sizeof(target_path), target->hash, target->files[j]);
                 
                 char* cur_content = read_file(cur_path);
                 char* target_content = read_file(target_path);
@@ -200,8 +228,7 @@ void func_diff(repository* R, char* commit_hash){
         }
         if (!flag_add) {
             char cur_path[512];
-            snprintf(cur_path, sizeof(cur_path), ".mygit/objects/%s_%s", \
-             cur->hash, cur->files[i]);
+            get_object_path(cur_path, sizeof(cur_path),cur->hash, cur->files[i]);
             char* content = read_file(cur_path);
             char file_hash[41];
             get_file_hash(content, file_hash);
@@ -221,8 +248,7 @@ void func_diff(repository* R, char* commit_hash){
         }
         if (!flag_remove) {
             char target_path[512];
-            snprintf(target_path, sizeof(target_path), ".mygit/objects/%s_%s",\
-             target->hash, target->files[i]);
+            get_object_path(target_path, sizeof(target_path), target->hash, target->files[i]);
             char* content = read_file(target_path);
             char file_hash[41];
             get_file_hash(content, file_hash);
@@ -266,7 +292,7 @@ void func_status(repository* R){
             printf("Added: %s\n", filename);
         } else {
             char parent_path[512];
-            snprintf(parent_path, sizeof(parent_path), ".mygit/objects/%s_%s", parent->hash, filename);
+            get_object_path(parent_path, sizeof(parent_path), parent->hash, filename);
             char* parent_content = read_file(parent_path);
             char cur_hash[41], staged_hash[41];
             get_file_hash(parent_content, cur_hash);
@@ -290,8 +316,8 @@ void func_checkout(repository* R, char* commit_hash, char* filename){
         return;
     }
     char object_path[512];
-    snprintf(object_path, sizeof(object_path), ".mygit/objects/%s_%s",\
-     commit_hash, filename);
+    get_object_path(object_path, sizeof(object_path), commit_hash, filename);
+
     FILE* input = fopen(object_path, "r");
     if (!input){
         printf("No such file in commit: %s\n", filename);
